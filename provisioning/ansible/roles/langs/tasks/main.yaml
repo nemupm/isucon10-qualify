@@ -13,10 +13,15 @@
     content: |
       export PATH=/home/isucon/.cargo/bin:$PATH
 
-- name: Update v1.46.0(stable)
+- name: Install v1.46.0
   become: yes
   become_user: isucon
-  command: /home/isucon/.cargo/bin/rustup update stable
+  command: /home/isucon/.cargo/bin/rustup install 1.46.0
+
+- name: Set v1.46.0 as default
+  become: yes
+  become_user: isucon
+  command: /home/isucon/.cargo/bin/rustup default 1.46.0
 
 - name: Install Deno v1.3.2
   become: yes
