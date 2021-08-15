@@ -13,10 +13,10 @@
 #     content: |
 #       export PATH=/home/isucon/.cargo/bin:$PATH
 
-- name: Update v1.46.0(stable)
-  become: yes
-  become_user: isucon
-  command: /home/isucon/.cargo/bin/rustup update stable
+# - name: Update v1.46.0(stable)
+#   become: yes
+#   become_user: isucon
+#   command: /home/isucon/.cargo/bin/rustup update stable
 
 # - name: Install Deno v1.3.2
 #   become: yes
@@ -33,13 +33,13 @@
 #       export PATH=/home/isucon/.deno/bin:$PATH
 
 
-- name: install xbuild
-  become: yes
-  become_user: isucon
-  git:
-    repo: https://github.com/tagomoris/xbuild.git
-    dest: /tmp/xbuild
-    version: master
+# - name: install xbuild
+#   become: yes
+#   become_user: isucon
+#   git:
+#     repo: https://github.com/tagomoris/xbuild.git
+#     dest: /tmp/xbuild
+#     version: master
 
 # - name: Install PHP
 #   become: yes
