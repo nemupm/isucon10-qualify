@@ -10,12 +10,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-        "sort"
+	"sort"
 	"strconv"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	geo "github.com/kellydunn/golang-geo"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/labstack/gommon/log"
@@ -841,8 +842,8 @@ func searchRecommendedEstateWithChair(c echo.Context) error {
 	h := chair.Height
 	d := chair.Depth
 
-	size := []int64 {w, h, d}
-	sort.Slice(size, func(i, j int) bool { return size[i] < size[j]})
+	size := []int64{w, h, d}
+	sort.Slice(size, func(i, j int) bool { return size[i] < size[j] })
 
 	query = `SELECT * FROM estate WHERE (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) ORDER BY popularity DESC, id ASC LIMIT ?`
 	err = db.Select(&estates, query, size[0], size[1], size[1], size[0], Limit)
@@ -865,8 +866,15 @@ func searchEstateNazotte(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	if len(coordinates.Coordinates) == 0 {
+	if len(coordinates.Coordinates) <= 0 {
 		return c.NoContent(http.StatusBadRequest)
+	}
+
+	if len(coordinates.Coordinates) <= 2 {
+		var re EstateSearchResponse
+		re.Estates = []Estate{}
+		re.Count = int64(len(re.Estates))
+		return c.JSON(http.StatusOK, re)
 	}
 
 	b := coordinates.getBoundingBox()
@@ -885,17 +893,10 @@ func searchEstateNazotte(c echo.Context) error {
 	for _, estate := range estatesInBoundingBox {
 		validatedEstate := Estate{}
 
-		point := fmt.Sprintf("'POINT(%f %f)'", estate.Latitude, estate.Longitude)
-		query := fmt.Sprintf(`SELECT * FROM estate WHERE id = ? AND ST_Contains(ST_PolygonFromText(%s), ST_GeomFromText(%s))`, coordinates.coordinatesToText(), point)
-		err = db.Get(&validatedEstate, query, estate.ID)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				continue
-			} else {
-				c.Echo().Logger.Errorf("db access is failed on executing validate if estate is in polygon : %v", err)
-				return c.NoContent(http.StatusInternalServerError)
-			}
-		} else {
+		var place Coordinate
+		place.Latitude = estate.Latitude
+		place.Longitude = estate.Longitude
+		if coordinates.contains(Coordinate(place)) {
 			estatesInPolygon = append(estatesInPolygon, validatedEstate)
 		}
 	}
@@ -983,4 +984,18 @@ func (cs Coordinates) coordinatesToText() string {
 		points = append(points, fmt.Sprintf("%f %f", c.Latitude, c.Longitude))
 	}
 	return fmt.Sprintf("'POLYGON((%s))'", strings.Join(points, ","))
+}
+
+func (cs Coordinates) contains(point Coordinate) bool {
+	// coordinates := polygon.Coordinates
+	polygon := geo.Polygon{}
+
+	for _, c := range cs.Coordinates {
+		polygon.Add(c.toPoint())
+	}
+	return polygon.Contains(point.toPoint())
+}
+
+func (c Coordinate) toPoint() *geo.Point {
+	return geo.NewPoint(c.Latitude, c.Longitude)
 }
