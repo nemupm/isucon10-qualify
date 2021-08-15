@@ -891,13 +891,11 @@ func searchEstateNazotte(c echo.Context) error {
 
 	estatesInPolygon := []Estate{}
 	for _, estate := range estatesInBoundingBox {
-		validatedEstate := Estate{}
-
 		var place Coordinate
 		place.Latitude = estate.Latitude
 		place.Longitude = estate.Longitude
 		if coordinates.contains(Coordinate(place)) {
-			estatesInPolygon = append(estatesInPolygon, validatedEstate)
+			estatesInPolygon = append(estatesInPolygon, estate)
 		}
 	}
 
@@ -987,7 +985,6 @@ func (cs Coordinates) coordinatesToText() string {
 }
 
 func (cs Coordinates) contains(point Coordinate) bool {
-	// coordinates := polygon.Coordinates
 	polygon := geo.Polygon{}
 
 	for _, c := range cs.Coordinates {
