@@ -737,11 +737,13 @@ func searchEstates(c echo.Context) error {
 			return c.NoContent(http.StatusBadRequest)
 		}
 
-		if estateRent.Min != -1 {
+		if estateRent.Min != -1 && estateRent.Max != -1 {
+			conditions = append(conditions, "rent BETWEEN ? AND ?")
+			params = append(params, estateRent.Min, estateRent.Max)
+		} else if estateRent.Min != -1 {
 			conditions = append(conditions, "rent >= ?")
 			params = append(params, estateRent.Min)
-		}
-		if estateRent.Max != -1 {
+		} else if estateRent.Max != -1 {
 			conditions = append(conditions, "rent < ?")
 			params = append(params, estateRent.Max)
 		}
@@ -823,7 +825,7 @@ func searchRecommendedEstateWithChair(c echo.Context) error {
 	}
 
 	chair := Chair{}
-	query := `SELECT * FROM chair WHERE id = ?`
+	query := `SELECT width,height,depth FROM chair WHERE id = ?`
 	err = db.Get(&chair, query, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
