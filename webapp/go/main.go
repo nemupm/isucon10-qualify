@@ -358,30 +358,30 @@ func postChair(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	var chairs []Chair
-	for _, row := range records {
+	chairs := make([]Chair, len(records))
+	for i, row := range records {
 		rm := RecordMapper{Record: row}
-		var chair Chair
-		chair.ID = int64(rm.NextInt())
-		chair.Name = rm.NextString()
-		chair.Description = rm.NextString()
-		chair.Thumbnail = rm.NextString()
-		chair.Price = int64(rm.NextInt())
-		chair.Height = int64(rm.NextInt())
-		chair.Width = int64(rm.NextInt())
-		chair.Depth = int64(rm.NextInt())
-		chair.Color = rm.NextString()
-		chair.Features = rm.NextString()
-		chair.Kind = rm.NextString()
-		chair.Popularity = int64(rm.NextInt())
-		chair.Stock = int64(rm.NextInt())
 
 		if err := rm.Err(); err != nil {
 			c.Logger().Errorf("failed to read record: %v", err)
 			return c.NoContent(http.StatusBadRequest)
 		}
 
-		chairs = append(chairs, chair)
+		chairs[i] = Chair{
+			ID: int64(rm.NextInt()),
+			Name: rm.NextString(),
+			Description: rm.NextString(),
+			Thumbnail: rm.NextString(),
+			Price: int64(rm.NextInt()),
+			Height: int64(rm.NextInt()),
+			Width: int64(rm.NextInt()),
+			Depth: int64(rm.NextInt()),
+			Color: rm.NextString(),
+			Features: rm.NextString(),
+			Kind: rm.NextString(),
+			Popularity: int64(rm.NextInt()),
+			Stock: int64(rm.NextInt()),
+		}
 	}
 
 	c.Logger().Info("[debug] start")
