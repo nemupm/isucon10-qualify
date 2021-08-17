@@ -676,6 +676,7 @@ func postEstate(c echo.Context) error {
 		estates = append(estates, estate)
 	}
 
+	c.Logger().Debugf("Estates: %v", estates)
 	query := "INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES(:id,:name,:description,:thumbnail,:address,:latitude,:longitude,:rent,:doorHeight,:doorWidth,:features,:popularity)"
 	_, err = db.NamedExec(query, estates)
 	if err != nil {
