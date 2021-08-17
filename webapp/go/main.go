@@ -364,31 +364,34 @@ func postChair(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 	defer tx.Rollback()
+	var chairs []Chair
 	for _, row := range records {
 		rm := RecordMapper{Record: row}
-		id := rm.NextInt()
-		name := rm.NextString()
-		description := rm.NextString()
-		thumbnail := rm.NextString()
-		price := rm.NextInt()
-		height := rm.NextInt()
-		width := rm.NextInt()
-		depth := rm.NextInt()
-		color := rm.NextString()
-		features := rm.NextString()
-		kind := rm.NextString()
-		popularity := rm.NextInt()
-		stock := rm.NextInt()
+		var chair Chair
+		chair.ID = int64(rm.NextInt())
+		chair.Name = rm.NextString()
+		chair.Description = rm.NextString()
+		chair.Thumbnail = rm.NextString()
+		chair.Price = int64(rm.NextInt())
+		chair.Height = int64(rm.NextInt())
+		chair.Width = int64(rm.NextInt())
+		chair.Depth = int64(rm.NextInt())
+		chair.Color = rm.NextString()
+		chair.Features = rm.NextString()
+		chair.Kind = rm.NextString()
+		chair.Popularity = int64(rm.NextInt())
+		chair.Stock = int64(rm.NextInt())
+
 		if err := rm.Err(); err != nil {
 			c.Logger().Errorf("failed to read record: %v", err)
 			return c.NoContent(http.StatusBadRequest)
 		}
-		_, err := tx.Exec("INSERT INTO chair(id, name, description, thumbnail, price, height, width, depth, color, features, kind, popularity, stock) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", id, name, description, thumbnail, price, height, width, depth, color, features, kind, popularity, stock)
-		if err != nil {
-			c.Logger().Errorf("failed to insert chair: %v", err)
-			return c.NoContent(http.StatusInternalServerError)
-		}
+
+		chairs = append(chairs, chair)
 	}
+
+	_, err = tx.Exec("INSERT INTO chair(id, name, description, thumbnail, price, height, width, depth, color, features, kind, popularity, stock) VALUES(:id, :name, :description, :thumbnail, :price, :height, :width, :depth, :color, :features, :kind, :popularity, :stock)", chairs)
+
 	if err := tx.Commit(); err != nil {
 		c.Logger().Errorf("failed to commit tx: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
