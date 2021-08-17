@@ -391,6 +391,7 @@ func postChair(c echo.Context) error {
 	c.Logger().Info("[debug] end")
 
 	if err != nil {
+		c.Logger().Error("failed to commit tx")
 		c.Logger().Errorf("failed to commit tx: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
