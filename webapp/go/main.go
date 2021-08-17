@@ -653,40 +653,36 @@ func postEstate(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
-		c.Logger().Errorf("failed to begin tx: %v", err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
-	defer tx.Rollback()
+	estates := make([]Estate, 0)
 	for _, row := range records {
+		var estate Estate
 		rm := RecordMapper{Record: row}
-		id := rm.NextInt()
-		name := rm.NextString()
-		description := rm.NextString()
-		thumbnail := rm.NextString()
-		address := rm.NextString()
-		latitude := rm.NextFloat()
-		longitude := rm.NextFloat()
-		rent := rm.NextInt()
-		doorHeight := rm.NextInt()
-		doorWidth := rm.NextInt()
-		features := rm.NextString()
-		popularity := rm.NextInt()
+		estate.ID = int64(rm.NextInt())
+		estate.Name = rm.NextString()
+		estate.Description = rm.NextString()
+		estate.Thumbnail = rm.NextString()
+		estate.Address = rm.NextString()
+		estate.Latitude = rm.NextFloat()
+		estate.Longitude = rm.NextFloat()
+		estate.Rent = int64(rm.NextInt())
+		estate.DoorHeight = int64(rm.NextInt())
+		estate.DoorWidth = int64(rm.NextInt())
+		estate.Features = rm.NextString()
+		estate.Popularity = int64(rm.NextInt())
 		if err := rm.Err(); err != nil {
 			c.Logger().Errorf("failed to read record: %v", err)
 			return c.NoContent(http.StatusBadRequest)
 		}
-		_, err := tx.Exec("INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", id, name, description, thumbnail, address, latitude, longitude, rent, doorHeight, doorWidth, features, popularity)
-		if err != nil {
-			c.Logger().Errorf("failed to insert estate: %v", err)
-			return c.NoContent(http.StatusInternalServerError)
-		}
+		estates = append(estates, estate)
 	}
-	if err := tx.Commit(); err != nil {
-		c.Logger().Errorf("failed to commit tx: %v", err)
+
+	query := "INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES(:ID,:Name,:Description,:Thumbnail,:Address,:Latitude,:Longitude,:Rent,:DoorHeight,:DoorWidth,:Features,:Popularity)"
+	_, err = db.NamedExec(query, estates)
+	if err != nil {
+		c.Logger().Errorf("failed to insert estates: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
+
 	return c.NoContent(http.StatusCreated)
 }
 
