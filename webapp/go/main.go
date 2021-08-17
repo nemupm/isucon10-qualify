@@ -247,7 +247,7 @@ func main() {
 	e.Logger.SetLevel(log.DEBUG)
 
 	// Middleware
-	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{Output: os.Stdout}))
+	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 
 	// Initialize
@@ -384,14 +384,9 @@ func postChair(c echo.Context) error {
 		}
 	}
 
-	c.Logger().Info("[debug] start")
-
 	_, err = db.NamedExec("INSERT INTO chair(id, name, description, thumbnail, price, height, width, depth, color, features, kind, popularity, stock) VALUES(:id, :name, :description, :thumbnail, :price, :height, :width, :depth, :color, :features, :kind, :popularity, :stock)", chairs)
 
-	c.Logger().Info("[debug] end")
-
 	if err != nil {
-		c.Logger().Error("failed to commit tx")
 		c.Logger().Errorf("failed to commit tx: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
