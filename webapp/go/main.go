@@ -384,7 +384,11 @@ func postChair(c echo.Context) error {
 		chairs = append(chairs, chair)
 	}
 
+	c.Logger().Info("[debug] start")
+
 	_, err = db.NamedExec("INSERT INTO chair(id, name, description, thumbnail, price, height, width, depth, color, features, kind, popularity, stock) VALUES(:id, :name, :description, :thumbnail, :price, :height, :width, :depth, :color, :features, :kind, :popularity, :stock)", chairs)
+
+	c.Logger().Info("[debug] end")
 
 	if err != nil {
 		c.Logger().Errorf("failed to commit tx: %v", err)
