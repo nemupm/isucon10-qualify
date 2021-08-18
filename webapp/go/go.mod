@@ -7,6 +7,7 @@ require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/erikstmartin/go-testdb v0.0.0-20160219214506-8d10e4a1bae5 // indirect
 	github.com/go-sql-driver/mysql v1.5.0
+	github.com/im7mortal/kmutex v1.0.1 // indirect
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/kellydunn/golang-geo v0.7.0 // indirect
 	github.com/kylelemons/go-gypsy v1.0.0 // indirect

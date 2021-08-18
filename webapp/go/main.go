@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/im7mortal/kmutex"
 	"github.com/jmoiron/sqlx"
 	geo "github.com/kellydunn/golang-geo"
 	"github.com/labstack/echo"
@@ -31,6 +32,7 @@ var mySQLConnectionData *MySQLConnectionEnv
 var chairSearchCondition ChairSearchCondition
 var estateSearchCondition EstateSearchCondition
 
+// Memory cache for estate
 var estateMap sync.Map
 
 func storeEstatesInMemoryCache(estates []Estate) {
@@ -46,7 +48,44 @@ func storeEstateInMemoryCache(e Estate) {
 
 func loadEstateFromMemoryCache(id int64) (Estate, bool) {
 	estate, ok := estateMap.Load(id)
+	if !ok {
+		return Estate{}, false
+	}
 	return estate.(Estate), ok
+}
+
+// Memory cache for chair
+var chairMap sync.Map
+var kmForStock kmutex.Kmutex
+
+func storeChairsInMemoryCache(chairs []Chair) {
+	for _, chair := range chairs {
+		storeChairInMemoryCache(chair)
+	}
+}
+
+func storeChairInMemoryCache(e Chair) {
+	chair := e
+	chairMap.Store(chair.ID, chair)
+}
+
+func loadChairFromMemoryCache(id int64) (Chair, bool) {
+	chair, ok := chairMap.Load(id)
+	if !ok {
+		return Chair{}, false
+	}
+	return chair.(Chair), ok
+}
+
+func decrementStock(id int64) {
+	kmForStock.Lock(id)
+	val, ok := chairMap.Load(id)
+	if ok {
+		chair := val.(Chair)
+		chair.Stock--
+		chairMap.Store(id, chair)
+	}
+	kmForStock.Unlock(id)
 }
 
 type InitializeResponse struct {
@@ -335,6 +374,13 @@ func initialize(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
+	err = loadAllChairsIntoMemoryCache(c)
+	if err != nil {
+		c.Echo().Logger.Errorf("Failed to load all chairs : %v", err)
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	kmForStock = *kmutex.New()
+
 	return c.JSON(http.StatusOK, InitializeResponse{
 		Language: "go",
 	})
@@ -356,6 +402,22 @@ func loadAllEstatesIntoMemoryCache(c echo.Context) error {
 	return nil
 }
 
+func loadAllChairsIntoMemoryCache(c echo.Context) error {
+	chairMap = sync.Map{}
+	chairs := []Chair{}
+	err := db.Select(&chairs, "SELECT * FROM chair")
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.Echo().Logger.Info("No chairs were stored in DB")
+			return nil
+		}
+		return err
+	}
+
+	storeChairsInMemoryCache(chairs)
+	return nil
+}
+
 func getChairDetail(c echo.Context) error {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -363,16 +425,10 @@ func getChairDetail(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	chair := Chair{}
-	query := `SELECT * FROM chair WHERE id = ?`
-	err = db.Get(&chair, query, id)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			c.Echo().Logger.Infof("requested id's chair not found : %v", id)
-			return c.NoContent(http.StatusNotFound)
-		}
-		c.Echo().Logger.Errorf("Failed to get the chair from id : %v", err)
-		return c.NoContent(http.StatusInternalServerError)
+	chair, ok := loadChairFromMemoryCache(int64(id))
+	if !ok {
+		c.Echo().Logger.Infof("requested id's chair not found : %v", id)
+		return c.NoContent(http.StatusNotFound)
 	} else if chair.Stock <= 0 {
 		c.Echo().Logger.Infof("requested id's chair is sold out : %v", id)
 		return c.NoContent(http.StatusNotFound)
@@ -431,6 +487,8 @@ func postChair(c echo.Context) error {
 		c.Logger().Errorf("failed to commit tx: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
+
+	storeChairsInMemoryCache(chairs)
 	return c.NoContent(http.StatusCreated)
 }
 
@@ -605,6 +663,8 @@ func buyChair(c echo.Context) error {
 		c.Echo().Logger.Infof("buyChair chair id \"%v\" not found", id)
 		return c.NoContent(http.StatusNotFound)
 	}
+
+	decrementStock(int64(id))
 
 	return c.NoContent(http.StatusOK)
 }
