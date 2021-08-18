@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"go.opencensus.io/trace"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -279,7 +280,9 @@ func getEnv(key, defaultValue string) string {
 //ConnectDB isuumoデータベースに接続する
 func (mc *MySQLConnectionEnv) ConnectDB() (*sqlx.DB, error) {
 	dsn := fmt.Sprintf("%v:%v@tcp(%v:%v)/%v", mc.User, mc.Password, mc.Host, mc.Port, mc.DBName)
-	return sqlx.Open("mysql", dsn)
+	db_, err := sql.Open(tracedDriver("mysql"), dsn)
+	dbx := sqlx.NewDb(db_, "mysql")
+	return dbx, err
 }
 
 func init() {
@@ -299,6 +302,9 @@ func init() {
 }
 
 func main() {
+	//initProfiler()
+	//initTrace()
+
 	// Echo instance
 	e := echo.New()
 	e.Debug = true
@@ -307,6 +313,7 @@ func main() {
 	// Middleware
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	e.Use(NewCensus())
 
 	// Initialize
 	e.POST("/initialize", initialize)
@@ -493,6 +500,9 @@ func postChair(c echo.Context) error {
 }
 
 func searchChairs(c echo.Context) error {
+	_, span := trace.StartSpan(c.Request().Context(), "root")
+	defer span.End()
+
 	conditions := make([]string, 0)
 	params := make([]interface{}, 0)
 
@@ -507,10 +517,12 @@ func searchChairs(c echo.Context) error {
 			conditions = append(conditions, "price >= ?")
 			params = append(params, chairPrice.Min)
 		}
+		span.AddAttributes(trace.Int64Attribute("chairPriceMin", chairPrice.Min))
 		if chairPrice.Max != -1 {
 			conditions = append(conditions, "price < ?")
 			params = append(params, chairPrice.Max)
 		}
+		span.AddAttributes(trace.Int64Attribute("chairPriceMax", chairPrice.Max))
 	}
 
 	if c.QueryParam("heightRangeId") != "" {
@@ -524,10 +536,12 @@ func searchChairs(c echo.Context) error {
 			conditions = append(conditions, "height >= ?")
 			params = append(params, chairHeight.Min)
 		}
+		span.AddAttributes(trace.Int64Attribute("chairHeightMin", chairHeight.Min))
 		if chairHeight.Max != -1 {
 			conditions = append(conditions, "height < ?")
 			params = append(params, chairHeight.Max)
 		}
+		span.AddAttributes(trace.Int64Attribute("chairHeightMax", chairHeight.Max))
 	}
 
 	if c.QueryParam("widthRangeId") != "" {
@@ -599,6 +613,8 @@ func searchChairs(c echo.Context) error {
 		c.Logger().Infof("Invalid format perPage parameter : %v", err)
 		return c.NoContent(http.StatusBadRequest)
 	}
+	_, span2 := trace.StartSpan(c.Request().Context(), "first query")
+	defer span2.End()
 
 	searchQuery := "SELECT * FROM chair WHERE "
 	countQuery := "SELECT COUNT(*) FROM chair WHERE "
@@ -606,14 +622,19 @@ func searchChairs(c echo.Context) error {
 	limitOffset := " ORDER BY popularity DESC, id ASC LIMIT ? OFFSET ?"
 
 	var res ChairSearchResponse
+	span.AddAttributes(trace.StringAttribute("query", countQuery+searchCondition))
 	err = db.Get(&res.Count, countQuery+searchCondition, params...)
 	if err != nil {
 		c.Logger().Errorf("searchChairs DB execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
+	_, span3 := trace.StartSpan(c.Request().Context(), "second query")
+	defer span3.End()
+
 	chairs := []Chair{}
 	params = append(params, perPage, page*perPage)
+	span.AddAttributes(trace.StringAttribute("query2", searchQuery+searchCondition+limitOffset))
 	err = db.Select(&chairs, searchQuery+searchCondition+limitOffset, params...)
 	if err != nil {
 		if err == sql.ErrNoRows {
