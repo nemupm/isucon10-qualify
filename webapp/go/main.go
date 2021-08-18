@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
@@ -29,6 +30,24 @@ var db *sqlx.DB
 var mySQLConnectionData *MySQLConnectionEnv
 var chairSearchCondition ChairSearchCondition
 var estateSearchCondition EstateSearchCondition
+
+var estateMap sync.Map
+
+func storeEstatesInMemoryCache(estates []Estate) {
+	for _, estate := range estates {
+		storeEstateInMemoryCache(estate)
+	}
+}
+
+func storeEstateInMemoryCache(e Estate) {
+	estate := e
+	estateMap.Store(estate.ID, estate)
+}
+
+func loadEstateFromMemoryCache(id int64) (Estate, bool) {
+	estate, ok := estateMap.Load(id)
+	return estate.(Estate), ok
+}
 
 type InitializeResponse struct {
 	Language string `json:"language"`
@@ -310,9 +329,31 @@ func initialize(c echo.Context) error {
 		}
 	}
 
+	err := loadAllEstatesIntoMemoryCache(c)
+	if err != nil {
+		c.Echo().Logger.Errorf("Failed to load all estates : %v", err)
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
 	return c.JSON(http.StatusOK, InitializeResponse{
 		Language: "go",
 	})
+}
+
+func loadAllEstatesIntoMemoryCache(c echo.Context) error {
+	estateMap = sync.Map{}
+	estates := []Estate{}
+	err := db.Select(&estates, "SELECT * FROM estate")
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.Echo().Logger.Info("No estates were stored in DB")
+			return nil
+		}
+		return err
+	}
+
+	storeEstatesInMemoryCache(estates)
+	return nil
 }
 
 func getChairDetail(c echo.Context) error {
@@ -608,17 +649,11 @@ func getEstateDetail(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	var estate Estate
-	err = db.Get(&estate, "SELECT * FROM estate WHERE id = ?", id)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			c.Echo().Logger.Infof("getEstateDetail estate id %v not found", id)
-			return c.NoContent(http.StatusNotFound)
-		}
-		c.Echo().Logger.Errorf("Database Execution error : %v", err)
-		return c.NoContent(http.StatusInternalServerError)
+	estate, ok := loadEstateFromMemoryCache(int64(id))
+	if !ok {
+		c.Echo().Logger.Infof("getEstateDetail estate id %v not found", id)
+		return c.NoContent(http.StatusNotFound)
 	}
-
 	return c.JSON(http.StatusOK, estate)
 }
 
@@ -682,6 +717,8 @@ func postEstate(c echo.Context) error {
 		c.Logger().Errorf("failed to insert estates: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
+
+	storeEstatesInMemoryCache(estates)
 
 	return c.NoContent(http.StatusCreated)
 }
