@@ -48,6 +48,9 @@ func storeEstateInMemoryCache(e Estate) {
 
 func loadEstateFromMemoryCache(id int64) (Estate, bool) {
 	estate, ok := estateMap.Load(id)
+	if !ok {
+		return Estate{}, false
+	}
 	return estate.(Estate), ok
 }
 
@@ -68,6 +71,9 @@ func storeChairInMemoryCache(e Chair) {
 
 func loadChairFromMemoryCache(id int64) (Chair, bool) {
 	chair, ok := chairMap.Load(id)
+	if !ok {
+		return Chair{}, false
+	}
 	return chair.(Chair), ok
 }
 
