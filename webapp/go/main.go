@@ -35,26 +35,27 @@ var chairSearchCondition ChairSearchCondition
 var estateSearchCondition EstateSearchCondition
 
 // Memory cache for estate
-var estateMap sync.Map
+var estateMap map[int64]Estate
+var lockForEstateMap sync.RWMutex
 
 func storeEstatesInMemoryCache(estates []Estate) {
-	for _, estate := range estates {
-		storeEstateInMemoryCache(estate)
+	lockForEstateMap.Lock()
+	for _, e := range estates {
+		estate := e
+		estateMap[estate.ID] = estate
+		updateLowPricedEstateHeap(estate)
 	}
-}
-
-func storeEstateInMemoryCache(e Estate) {
-	estate := e
-	estateMap.Store(estate.ID, estate)
-	updateLowPricedEstateHeap(e)
+	lockForEstateMap.Unlock()
 }
 
 func loadEstateFromMemoryCache(id int64) (Estate, bool) {
-	estate, ok := estateMap.Load(id)
+	lockForEstateMap.RLock()
+	defer lockForEstateMap.RUnlock()
+	estate, ok := estateMap[id]
 	if !ok {
 		return Estate{}, false
 	}
-	return estate.(Estate), ok
+	return estate, ok
 }
 
 func lessForLowPriceComparison(a, b Estate) bool {
@@ -476,7 +477,7 @@ func initialize(c echo.Context) error {
 }
 
 func loadAllEstatesIntoMemoryCache(c echo.Context) error {
-	estateMap = sync.Map{}
+	estateMap = map[int64]Estate{}
 	estates := []Estate{}
 	err := db.Select(&estates, "SELECT * FROM estate")
 	if err != nil {
@@ -1055,34 +1056,24 @@ func searchEstateNazotte(c echo.Context) error {
 	}
 
 	estatesInPolygon := []Estate{}
-	estateMap.Range(
-		func(key, value interface{}) bool {
-			estate := value.(Estate)
-			var place Coordinate
-			place.Latitude = estate.Latitude
-			place.Longitude = estate.Longitude
-			if coordinates.contains(Coordinate(place)) {
-				estatesInPolygon = append(estatesInPolygon, estate)
-				if len(estatesInPolygon) > NazotteLimit {
-					sort.Slice(estatesInPolygon, func(i int, j int) bool {
-						if estatesInPolygon[i].Popularity != estatesInPolygon[j].Popularity {
-							return estatesInPolygon[i].Popularity > estatesInPolygon[j].Popularity
-						}
-						return estatesInPolygon[i].ID < estatesInPolygon[j].ID
-					})
-
-					estatesInPolygon = estatesInPolygon[:NazotteLimit]
-				}
-			}
-			return true // loop all estates
-		},
-	)
+	lockForEstateMap.RLock()
+	for _, value := range estateMap {
+		estate := value
+		var place Coordinate
+		place.Latitude = estate.Latitude
+		place.Longitude = estate.Longitude
+		if coordinates.contains(Coordinate(place)) {
+			estatesInPolygon = append(estatesInPolygon, estate)
+		}
+	}
+	lockForEstateMap.RUnlock()
 	sort.Slice(estatesInPolygon, func(i int, j int) bool {
 		if estatesInPolygon[i].Popularity != estatesInPolygon[j].Popularity {
 			return estatesInPolygon[i].Popularity > estatesInPolygon[j].Popularity
 		}
 		return estatesInPolygon[i].ID < estatesInPolygon[j].ID
 	})
+	estatesInPolygon = estatesInPolygon[:NazotteLimit]
 
 	var re EstateSearchResponse
 	re.Estates = []Estate{}
