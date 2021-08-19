@@ -1054,31 +1054,25 @@ func searchEstateNazotte(c echo.Context) error {
 		return c.JSON(http.StatusOK, re)
 	}
 
-	b := coordinates.getBoundingBox()
-	estatesInBoundingBox := []Estate{}
-	query := `SELECT * FROM estate WHERE latitude <= ? AND latitude >= ? AND longitude <= ? AND longitude >= ? ORDER BY popularity DESC, id ASC`
-	err = db.Select(&estatesInBoundingBox, query, b.BottomRightCorner.Latitude, b.TopLeftCorner.Latitude, b.BottomRightCorner.Longitude, b.TopLeftCorner.Longitude)
-	if err == sql.ErrNoRows {
-		c.Echo().Logger.Infof("select * from estate where latitude ...", err)
-		return c.JSON(http.StatusOK, EstateSearchResponse{Count: 0, Estates: []Estate{}})
-	} else if err != nil {
-		c.Echo().Logger.Errorf("database execution error : %v", err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
-
-	_, span2 := trace.StartSpan(c.Request().Context(), "contains")
-	defer span2.End()
-
 	estatesInPolygon := []Estate{}
-	for _, estate := range estatesInBoundingBox {
-		validatedEstate := estate
-		var place Coordinate
-		place.Latitude = estate.Latitude
-		place.Longitude = estate.Longitude
-		if coordinates.contains(Coordinate(place)) {
-			estatesInPolygon = append(estatesInPolygon, validatedEstate)
+	estateMap.Range(
+		func(key, value interface{}) bool {
+			estate := value.(Estate)
+			var place Coordinate
+			place.Latitude = estate.Latitude
+			place.Longitude = estate.Longitude
+			if coordinates.contains(Coordinate(place)) {
+				estatesInPolygon = append(estatesInPolygon, estate)
+			}
+			return true // loop all estates
+		},
+	)
+	sort.Slice(estatesInPolygon, func(i int, j int) bool {
+		if estatesInPolygon[i].Popularity != estatesInPolygon[j].Popularity {
+			return estatesInPolygon[i].Popularity > estatesInPolygon[j].Popularity
 		}
-	}
+		return estatesInPolygon[i].ID < estatesInPolygon[j].ID
+	})
 
 	var re EstateSearchResponse
 	re.Estates = []Estate{}
