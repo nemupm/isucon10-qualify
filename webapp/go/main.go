@@ -461,6 +461,7 @@ func loadAllChairsIntoMemoryCache(c echo.Context) error {
 	}
 
 	storeChairsInMemoryCache(chairs)
+	lowPricedChairCacheIsValid = false
 	return nil
 }
 
