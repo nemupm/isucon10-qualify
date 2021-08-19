@@ -982,17 +982,10 @@ func searchEstates(c echo.Context) error {
 
 func getLowPricedEstate(c echo.Context) error {
 	estates := loadLowPricedEstate()
-	query := `SELECT * FROM estate ORDER BY rent ASC, id ASC LIMIT ?`
-	err := db.Select(&estates, query, Limit)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			c.Logger().Error("getLowPricedEstate not found")
-			return c.JSON(http.StatusOK, EstateListResponse{[]Estate{}})
-		}
-		c.Logger().Errorf("getLowPricedEstate DB execution error : %v", err)
-		return c.NoContent(http.StatusInternalServerError)
+	if len(estates) == 0 {
+		c.Logger().Error("getLowPricedEstate not found")
+		return c.JSON(http.StatusOK, EstateListResponse{[]Estate{}})
 	}
-
 	return c.JSON(http.StatusOK, EstateListResponse{Estates: estates})
 }
 
