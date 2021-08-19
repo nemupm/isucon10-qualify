@@ -25,6 +25,8 @@ import (
 	"github.com/labstack/gommon/log"
 )
 
+// score: 1382, 08/19 22:30
+
 const Limit = 20
 const NazotteLimit = 50
 
