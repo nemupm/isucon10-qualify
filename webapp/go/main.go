@@ -345,8 +345,8 @@ func init() {
 }
 
 func main() {
-	//initProfiler()
-	//initTrace()
+	initProfiler()
+	initTrace()
 
 	// Echo instance
 	e := echo.New()
@@ -692,6 +692,9 @@ func searchChairs(c echo.Context) error {
 	}
 
 	res.Chairs = chairs
+
+	_, span4 := trace.StartSpan(c.Request().Context(), "response")
+	defer span4.End()
 
 	return c.JSON(http.StatusOK, res)
 }
