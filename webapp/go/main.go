@@ -1,7 +1,6 @@
 package main
 
 import (
-	"container/heap"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -65,53 +64,29 @@ func lessForLowPriceComparison(a, b Estate) bool {
 	return a.ID < b.ID
 }
 
-type EstateHeapForLowPrice []Estate
-
-func (h EstateHeapForLowPrice) Len() int { return len(h) }
-func (h EstateHeapForLowPrice) Less(i, j int) bool {
-	// the most expensive element will be the top
-	return !lessForLowPriceComparison(h[i], h[j])
-}
-func (h EstateHeapForLowPrice) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
-func (h *EstateHeapForLowPrice) Push(x interface{}) {
-	*h = append(*h, x.(Estate))
-}
-func (h *EstateHeapForLowPrice) Pop() interface{} {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
-
 var lockForLowPricedEstate sync.RWMutex
-var lowPricedEstateHeap *EstateHeapForLowPrice
+var lowPricedEstate []Estate
 
 func initializeLowPricedEstateHeap() {
 	lockForLowPricedEstate.Lock()
-	lowPricedEstateHeap = &EstateHeapForLowPrice{}
+	lowPricedEstate = []Estate{}
 	lockForLowPricedEstate.Unlock()
 }
 
 func updateLowPricedEstateHeap(newEstate Estate) {
 	lockForLowPricedEstate.Lock()
-	heap.Push(lowPricedEstateHeap, newEstate)
-	if len(*lowPricedEstateHeap) > Limit {
-		heap.Pop(lowPricedEstateHeap)
+	lowPricedEstate = append(lowPricedEstate, newEstate)
+	if len(lowPricedEstate) > Limit {
+		sort.Slice(lowPricedEstate, func(i, j int) bool { return lessForLowPriceComparison(lowPricedEstate[i], lowPricedEstate[j]) })
+		lowPricedEstate = lowPricedEstate[:Limit]
 	}
 	lockForLowPricedEstate.Unlock()
 }
 
 func loadLowPricedEstate() []Estate {
-	estates := make([]Estate, 0, Limit)
 	lockForLowPricedEstate.RLock()
-	for _, e := range *lowPricedEstateHeap {
-		estate := e
-		estates = append(estates, estate)
-	}
-	lockForLowPricedEstate.RUnlock()
-	sort.Slice(estates, func(i, j int) bool { return lessForLowPriceComparison(estates[i], estates[j]) })
-	return estates
+	defer lockForLowPricedEstate.RUnlock()
+	return lowPricedEstate
 }
 
 // Memory cache for chair
