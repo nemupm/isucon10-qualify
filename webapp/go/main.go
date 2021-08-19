@@ -38,6 +38,12 @@ var estateSearchCondition EstateSearchCondition
 var estateMap map[int64]Estate
 var lockForEstateMap sync.RWMutex
 
+func initializeEstatesInMemoryCache() {
+	lockForEstateMap.Lock()
+	estateMap = map[int64]Estate{}
+	lockForEstateMap.Unlock()
+}
+
 func storeEstatesInMemoryCache(estates []Estate) {
 	lockForEstateMap.Lock()
 	for _, e := range estates {
@@ -55,7 +61,7 @@ func loadEstateFromMemoryCache(id int64) (Estate, bool) {
 	if !ok {
 		return Estate{}, false
 	}
-	return estate, ok
+	return estate, true
 }
 
 func lessForLowPriceComparison(a, b Estate) bool {
@@ -428,6 +434,7 @@ func main() {
 	kmForStock = *kmutex.New()
 	lockForLowPricedChair = sync.Mutex{}
 	lockForLowPricedEstate = sync.RWMutex{}
+	lockForEstateMap = sync.RWMutex{}
 	initializeLowPricedEstateHeap()
 
 	// Start server
@@ -477,7 +484,7 @@ func initialize(c echo.Context) error {
 }
 
 func loadAllEstatesIntoMemoryCache(c echo.Context) error {
-	estateMap = map[int64]Estate{}
+	initializeEstatesInMemoryCache()
 	estates := []Estate{}
 	err := db.Select(&estates, "SELECT * FROM estate")
 	if err != nil {
@@ -1073,7 +1080,10 @@ func searchEstateNazotte(c echo.Context) error {
 		}
 		return estatesInPolygon[i].ID < estatesInPolygon[j].ID
 	})
-	estatesInPolygon = estatesInPolygon[:NazotteLimit]
+
+	if len(estatesInPolygon) > NazotteLimit {
+		estatesInPolygon = estatesInPolygon[:NazotteLimit]
+	}
 
 	var re EstateSearchResponse
 	re.Estates = []Estate{}
