@@ -1063,6 +1063,16 @@ func searchEstateNazotte(c echo.Context) error {
 			place.Longitude = estate.Longitude
 			if coordinates.contains(Coordinate(place)) {
 				estatesInPolygon = append(estatesInPolygon, estate)
+				if len(estatesInPolygon) > NazotteLimit {
+					sort.Slice(estatesInPolygon, func(i int, j int) bool {
+						if estatesInPolygon[i].Popularity != estatesInPolygon[j].Popularity {
+							return estatesInPolygon[i].Popularity > estatesInPolygon[j].Popularity
+						}
+						return estatesInPolygon[i].ID < estatesInPolygon[j].ID
+					})
+
+					estatesInPolygon = estatesInPolygon[:NazotteLimit]
+				}
 			}
 			return true // loop all estates
 		},
