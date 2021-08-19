@@ -5,7 +5,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"go.opencensus.io/trace"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"go.opencensus.io/trace"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/im7mortal/kmutex"
@@ -45,6 +46,7 @@ func storeEstatesInMemoryCache(estates []Estate) {
 func storeEstateInMemoryCache(e Estate) {
 	estate := e
 	estateMap.Store(estate.ID, estate)
+	updateLowPricedEstateHeap(e)
 }
 
 func loadEstateFromMemoryCache(id int64) (Estate, bool) {
@@ -53,6 +55,38 @@ func loadEstateFromMemoryCache(id int64) (Estate, bool) {
 		return Estate{}, false
 	}
 	return estate.(Estate), ok
+}
+
+func lessForLowPriceComparison(a, b Estate) bool {
+	if a.Rent != b.Rent {
+		return a.Rent < b.Rent
+	}
+	return a.ID < b.ID
+}
+
+var lockForLowPricedEstate sync.RWMutex
+var lowPricedEstate []Estate
+
+func initializeLowPricedEstateHeap() {
+	lockForLowPricedEstate.Lock()
+	lowPricedEstate = []Estate{}
+	lockForLowPricedEstate.Unlock()
+}
+
+func updateLowPricedEstateHeap(newEstate Estate) {
+	lockForLowPricedEstate.Lock()
+	lowPricedEstate = append(lowPricedEstate, newEstate)
+	if len(lowPricedEstate) > Limit {
+		sort.Slice(lowPricedEstate, func(i, j int) bool { return lessForLowPriceComparison(lowPricedEstate[i], lowPricedEstate[j]) })
+		lowPricedEstate = lowPricedEstate[:Limit]
+	}
+	lockForLowPricedEstate.Unlock()
+}
+
+func loadLowPricedEstate() []Estate {
+	lockForLowPricedEstate.RLock()
+	defer lockForLowPricedEstate.RUnlock()
+	return lowPricedEstate
 }
 
 // Memory cache for chair
@@ -98,7 +132,7 @@ var lowPricedChairCacheIsValid bool
 
 var lowPricedChairCache []Chair
 
-var lockForLowPricedChair sync.RWMutex
+var lockForLowPricedChair sync.Mutex
 
 func invalidateLowPricedChairCache() {
 	lockForLowPricedChair.Lock()
@@ -391,7 +425,9 @@ func main() {
 
 	lowPricedChairCacheIsValid = false
 	kmForStock = *kmutex.New()
-	lockForLowPricedChair = sync.RWMutex{}
+	lockForLowPricedChair = sync.Mutex{}
+	lockForLowPricedEstate = sync.RWMutex{}
+	initializeLowPricedEstateHeap()
 
 	// Start server
 	serverPort := fmt.Sprintf(":%v", getEnv("SERVER_PORT", "1323"))
@@ -451,6 +487,7 @@ func loadAllEstatesIntoMemoryCache(c echo.Context) error {
 		return err
 	}
 
+	initializeLowPricedEstateHeap()
 	storeEstatesInMemoryCache(estates)
 	return nil
 }
@@ -947,18 +984,11 @@ func searchEstates(c echo.Context) error {
 }
 
 func getLowPricedEstate(c echo.Context) error {
-	estates := make([]Estate, 0, Limit)
-	query := `SELECT * FROM estate ORDER BY rent ASC, id ASC LIMIT ?`
-	err := db.Select(&estates, query, Limit)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			c.Logger().Error("getLowPricedEstate not found")
-			return c.JSON(http.StatusOK, EstateListResponse{[]Estate{}})
-		}
-		c.Logger().Errorf("getLowPricedEstate DB execution error : %v", err)
-		return c.NoContent(http.StatusInternalServerError)
+	estates := loadLowPricedEstate()
+	if len(estates) == 0 {
+		c.Logger().Error("getLowPricedEstate not found")
+		return c.JSON(http.StatusOK, EstateListResponse{[]Estate{}})
 	}
-
 	return c.JSON(http.StatusOK, EstateListResponse{Estates: estates})
 }
 
