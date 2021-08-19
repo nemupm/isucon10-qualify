@@ -77,15 +77,58 @@ func loadChairFromMemoryCache(id int64) (Chair, bool) {
 	return chair.(Chair), ok
 }
 
-func decrementStock(id int64) {
+func decrementStock(id int64) int64 {
 	kmForStock.Lock(id)
 	val, ok := chairMap.Load(id)
-	if ok {
-		chair := val.(Chair)
-		chair.Stock--
-		chairMap.Store(id, chair)
+	if !ok {
+		return -1
 	}
+
+	chair := val.(Chair)
+	chair.Stock--
+	chairMap.Store(id, chair)
 	kmForStock.Unlock(id)
+	return chair.Stock
+}
+
+// Cache for lowPricedChair
+
+var lowPricedChairCacheIsValid bool
+
+var lowPricedChairCache []Chair
+
+var lockForLowPricedChair sync.RWMutex
+
+func invalidateLowPricedChairCache() {
+	lockForLowPricedChair.Lock()
+	lowPricedChairCacheIsValid = false
+	lockForLowPricedChair.Unlock()
+}
+
+func loadLowPricedChair() ([]Chair, error) {
+	lockForLowPricedChair.Lock()
+	defer lockForLowPricedChair.Unlock()
+	if lowPricedChairCacheIsValid {
+		return lowPricedChairCache, nil
+	}
+
+	chairs, err := loadLowPricedChairFromDB()
+	if err != nil {
+		return chairs, err
+	}
+	lowPricedChairCacheIsValid = true
+	lowPricedChairCache = chairs
+	return chairs, nil
+}
+
+func loadLowPricedChairFromDB() ([]Chair, error) {
+	var chairs []Chair
+	query := `SELECT * FROM chair WHERE stock > 0 ORDER BY price ASC, id ASC LIMIT ?`
+	err := db.Select(&chairs, query, Limit)
+	if err == sql.ErrNoRows {
+		return []Chair{}, nil
+	}
+	return chairs, err
 }
 
 type InitializeResponse struct {
@@ -339,6 +382,10 @@ func main() {
 	db.SetMaxOpenConns(10)
 	defer db.Close()
 
+	lowPricedChairCacheIsValid = false
+	kmForStock = *kmutex.New()
+	lockForLowPricedChair = sync.RWMutex{}
+
 	// Start server
 	serverPort := fmt.Sprintf(":%v", getEnv("SERVER_PORT", "1323"))
 	e.Logger.Fatal(e.Start(serverPort))
@@ -379,7 +426,6 @@ func initialize(c echo.Context) error {
 		c.Echo().Logger.Errorf("Failed to load all chairs : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
-	kmForStock = *kmutex.New()
 
 	return c.JSON(http.StatusOK, InitializeResponse{
 		Language: "go",
@@ -664,8 +710,10 @@ func buyChair(c echo.Context) error {
 		return c.NoContent(http.StatusNotFound)
 	}
 
-	decrementStock(int64(id))
-
+	remainingStock := decrementStock(int64(id))
+	if remainingStock == 0 {
+		invalidateLowPricedChairCache()
+	}
 	return c.NoContent(http.StatusOK)
 }
 
@@ -674,18 +722,11 @@ func getChairSearchCondition(c echo.Context) error {
 }
 
 func getLowPricedChair(c echo.Context) error {
-	var chairs []Chair
-	query := `SELECT * FROM chair WHERE stock > 0 ORDER BY price ASC, id ASC LIMIT ?`
-	err := db.Select(&chairs, query, Limit)
+	chairs, err := loadLowPricedChair()
 	if err != nil {
-		if err == sql.ErrNoRows {
-			c.Logger().Error("getLowPricedChair not found")
-			return c.JSON(http.StatusOK, ChairListResponse{[]Chair{}})
-		}
 		c.Logger().Errorf("getLowPricedChair DB execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
-
 	return c.JSON(http.StatusOK, ChairListResponse{Chairs: chairs})
 }
 
@@ -766,6 +807,7 @@ func postEstate(c echo.Context) error {
 	}
 
 	storeEstatesInMemoryCache(estates)
+	invalidateLowPricedChairCache()
 
 	return c.NoContent(http.StatusCreated)
 }
