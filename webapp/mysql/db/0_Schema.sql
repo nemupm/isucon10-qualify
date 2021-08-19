@@ -39,10 +39,5 @@ CREATE TABLE isuumo.chair
     popularity_desc INTEGER AS (-popularity) NOT NULL
 );
 
--- create index estate1 on isuumo.estate(door_height,door_width);
--- create index estate2 on isuumo.estate(latitude,longitude,popularity);
--- create index estate3 on isuumo.estate(popularity);
--- create index estate4 on isuumo.estate(rent,popularity);
--- create index estate5 on isuumo.estate(rent,id);
--- create index chair1 on isuumo.chair(price,popularity,id);
--- create index chair2 on isuumo.chair(stock,price,id);
+create index order_estate on isuumo.estate(popularity_desc,id);
+create index order_chair on isuumo.chair(popularity_desc,id);
