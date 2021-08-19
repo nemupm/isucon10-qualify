@@ -1003,6 +1003,9 @@ func searchRecommendedEstateWithChair(c echo.Context) error {
 }
 
 func searchEstateNazotte(c echo.Context) error {
+	_, span := trace.StartSpan(c.Request().Context(), "root")
+	defer span.End()
+
 	coordinates := Coordinates{}
 	err := c.Bind(&coordinates)
 	if err != nil {
@@ -1032,6 +1035,9 @@ func searchEstateNazotte(c echo.Context) error {
 		c.Echo().Logger.Errorf("database execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
+
+	_, span2 := trace.StartSpan(c.Request().Context(), "contains")
+	defer span2.End()
 
 	estatesInPolygon := []Estate{}
 	for _, estate := range estatesInBoundingBox {
