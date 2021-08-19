@@ -1,11 +1,11 @@
 package main
 
 import (
+	"container/heap"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"go.opencensus.io/trace"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"go.opencensus.io/trace"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/im7mortal/kmutex"
@@ -45,6 +47,7 @@ func storeEstatesInMemoryCache(estates []Estate) {
 func storeEstateInMemoryCache(e Estate) {
 	estate := e
 	estateMap.Store(estate.ID, estate)
+	updateLowPricedEstateHeap(e)
 }
 
 func loadEstateFromMemoryCache(id int64) (Estate, bool) {
@@ -53,6 +56,62 @@ func loadEstateFromMemoryCache(id int64) (Estate, bool) {
 		return Estate{}, false
 	}
 	return estate.(Estate), ok
+}
+
+func lessForLowPriceComparison(a, b Estate) bool {
+	if a.Rent != b.Rent {
+		return a.Rent < b.Rent
+	}
+	return a.ID < b.ID
+}
+
+type EstateHeapForLowPrice []Estate
+
+func (h EstateHeapForLowPrice) Len() int { return len(h) }
+func (h EstateHeapForLowPrice) Less(i, j int) bool {
+	// the most expensive element will be the top
+	return !lessForLowPriceComparison(h[i], h[j])
+}
+func (h EstateHeapForLowPrice) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+func (h *EstateHeapForLowPrice) Push(x interface{}) {
+	*h = append(*h, x.(Estate))
+}
+func (h *EstateHeapForLowPrice) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
+}
+
+var lockForLowPricedEstate sync.RWMutex
+var lowPricedEstateHeap *EstateHeapForLowPrice
+
+func initializeLowPricedEstateHeap() {
+	lockForLowPricedEstate.Lock()
+	lowPricedEstateHeap = &EstateHeapForLowPrice{}
+	lockForLowPricedEstate.Unlock()
+}
+
+func updateLowPricedEstateHeap(newEstate Estate) {
+	lockForLowPricedEstate.Lock()
+	heap.Push(lowPricedEstateHeap, newEstate)
+	if len(*lowPricedEstateHeap) > Limit {
+		heap.Pop(lowPricedEstateHeap)
+	}
+	lockForLowPricedEstate.Unlock()
+}
+
+func loadLowPricedEstate() []Estate {
+	estates := make([]Estate, 0, Limit)
+	lockForLowPricedEstate.RLock()
+	for _, e := range *lowPricedEstateHeap {
+		estate := e
+		estates = append(estates, estate)
+	}
+	lockForLowPricedEstate.RUnlock()
+	sort.Slice(estates, func(i, j int) bool { return lessForLowPriceComparison(estates[i], estates[j]) })
+	return estates
 }
 
 // Memory cache for chair
@@ -98,7 +157,7 @@ var lowPricedChairCacheIsValid bool
 
 var lowPricedChairCache []Chair
 
-var lockForLowPricedChair sync.RWMutex
+var lockForLowPricedChair sync.Mutex
 
 func invalidateLowPricedChairCache() {
 	lockForLowPricedChair.Lock()
@@ -391,7 +450,9 @@ func main() {
 
 	lowPricedChairCacheIsValid = false
 	kmForStock = *kmutex.New()
-	lockForLowPricedChair = sync.RWMutex{}
+	lockForLowPricedChair = sync.Mutex{}
+	lockForLowPricedEstate = sync.RWMutex{}
+	initializeLowPricedEstateHeap()
 
 	// Start server
 	serverPort := fmt.Sprintf(":%v", getEnv("SERVER_PORT", "1323"))
@@ -451,6 +512,7 @@ func loadAllEstatesIntoMemoryCache(c echo.Context) error {
 		return err
 	}
 
+	initializeLowPricedEstateHeap()
 	storeEstatesInMemoryCache(estates)
 	return nil
 }
@@ -944,7 +1006,7 @@ func searchEstates(c echo.Context) error {
 }
 
 func getLowPricedEstate(c echo.Context) error {
-	estates := make([]Estate, 0, Limit)
+	estates := loadLowPricedEstate()
 	query := `SELECT * FROM estate ORDER BY rent ASC, id ASC LIMIT ?`
 	err := db.Select(&estates, query, Limit)
 	if err != nil {
